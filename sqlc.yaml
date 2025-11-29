@@ -1,0 +1,11 @@
+version: "2"
+sql:
+  - schema: "internal/database/migrations"
+    queries: "internal/database/queries"
+    engine: "postgresql"
+    gen:
+      go:
+        package: "gensql"
+        out: "internal/database/gensql"
+        sql_package: "pgx/v5"
+        emit_pointers_for_null_types: true
