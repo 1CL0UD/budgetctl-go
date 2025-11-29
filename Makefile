@@ -42,7 +42,11 @@ sqlc:
 	@echo "4. Generating Go code..."
 	sqlc generate
 
+swagger:
+	swag init -g cmd/api/main.go --output docs
+
 gen:
 	@$(MAKE) diff name=$(name)
 	@$(MAKE) apply
 	@$(MAKE) sqlc
+	@$(MAKE) swagger

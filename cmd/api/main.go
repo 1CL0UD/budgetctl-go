@@ -5,6 +5,11 @@ import (
 	"fmt"
 )
 
+// @title           BudgetCtl API
+// @version         1.0
+// @description     Personal Finance API built with Go and Echo.
+// @host            localhost:8080
+// @BasePath        /api
 func main() {
 	srv := server.NewServer()
 

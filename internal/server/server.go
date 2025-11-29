@@ -6,8 +6,12 @@ import (
 	"time"
 
 	"budgetctl-go/internal/database"
+	"budgetctl-go/internal/server/routes"
 
-	_ "github.com/joho/godotenv/autoload"
+	"github.com/danielgtaylor/huma/v2"
+	"github.com/danielgtaylor/huma/v2/adapters/humaecho"
+	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v4/middleware"
 )
 
 type Server struct {
@@ -17,17 +21,33 @@ type Server struct {
 
 func NewServer() *http.Server {
 	port := 8080
-
-	srv := &Server{
+	NewServer := &Server{
 		port: port,
 		db:   database.New(),
 	}
 
-	return &http.Server{
-		Addr:         fmt.Sprintf(":%d", srv.port),
-		Handler:      srv.RegisterRoutes(),
+	// Declare Server config
+	server := &http.Server{
+		Addr:         fmt.Sprintf(":%d", NewServer.port),
+		Handler:      NewServer.RegisterRoutes(),
 		IdleTimeout:  time.Minute,
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 30 * time.Second,
 	}
+
+	return server
+}
+
+func (s *Server) RegisterRoutes() http.Handler {
+	e := echo.New()
+	e.Use(middleware.Logger())
+	e.Use(middleware.Recover())
+
+	config := huma.DefaultConfig("BudgetCtl API", "1.0.0")
+	api := humaecho.New(e, config)
+
+	routes.RegisterHealth(api, s.db)
+	routes.RegisterHello(api)
+
+	return e
 }
