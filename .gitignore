@@ -1,0 +1,47 @@
+# Go binaries
+*.exe
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Build output
+bin/
+build/
+
+# Caches & coverage
+*.cov
+*.cover
+*.prof
+cover/
+coverage/
+
+# Generated files
+*.pb.go
+
+# Vendored deps
+vendor/
+
+# Logs & temp
+*.log
+*.tmp
+tmp/
+
+# Environment & secrets
+.env
+.env.*
+
+# Local databases
+*.db
+*.sqlite
+*.sqlite3
+
+# IDE/editor
+.vscode/
+.idea/
+
+# OS artifacts
+.DS_Store
+Thumbs.db
+
