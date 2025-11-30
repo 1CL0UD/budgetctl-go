@@ -76,7 +76,7 @@ func completeAuth(c echo.Context, db database.Service) error {
 		SameSite: http.SameSiteLaxMode,
 	})
 
-	return c.Redirect(http.StatusTemporaryRedirect, "http://localhost:5173/dashboard")
+	return c.Redirect(http.StatusTemporaryRedirect, "http://localhost:5173/")
 }
 
 func RegisterAuthRoutes(e *echo.Echo, db database.Service) {
@@ -84,4 +84,55 @@ func RegisterAuthRoutes(e *echo.Echo, db database.Service) {
 	e.GET("/auth/:provider/callback", func(c echo.Context) error {
 		return completeAuth(c, db)
 	})
+	e.POST("/auth/logout", logout)
+	e.GET("/auth/me", getCurrentUser(db))
+}
+
+func logout(c echo.Context) error {
+	// Clear auth cookie
+	c.SetCookie(&http.Cookie{
+		Name:     "auth_token",
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   false, // TODO: Set true in Prod (HTTPS)
+		Expires:  time.Unix(0, 0),
+		MaxAge:   -1,
+		SameSite: http.SameSiteLaxMode,
+	})
+
+	return c.NoContent(http.StatusNoContent)
+}
+
+func getCurrentUser(db database.Service) echo.HandlerFunc {
+	type response struct {
+		ID    int64  `json:"id"`
+		Email string `json:"email"`
+	}
+
+	return func(c echo.Context) error {
+		cookie, err := c.Cookie("auth_token")
+		if err != nil || cookie.Value == "" {
+			return c.JSON(http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		}
+
+		userID, err := auth.ParseToken(cookie.Value)
+		if err != nil {
+			return c.JSON(http.StatusUnauthorized, map[string]string{"error": "invalid token"})
+		}
+
+		ctx := c.Request().Context()
+		user, err := db.GetQueries().GetUserByID(ctx, userID)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) || errors.Is(err, sql.ErrNoRows) {
+				return c.JSON(http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+			}
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "database error"})
+		}
+
+		return c.JSON(http.StatusOK, response{
+			ID:    user.ID,
+			Email: user.Email,
+		})
+	}
 }
