@@ -67,9 +67,57 @@ table "transactions" {
     null = false
     type = text
   }
+  column "type" {
+    null = false
+    type = text
+    default = sql("'expense'")
+  }
+  column "currency" {
+    null = false
+    type = text
+    default = sql("'USD'")
+  }
+  column "status" {
+    null = false
+    type = text
+    default = sql("'pending'")
+  }
+  column "account" {
+    null = false
+    type = text
+    default = sql("''")
+  }
+  column "tags" {
+    null    = false
+    type    = sql("text[]")
+    default = sql("'{}'::text[]")
+  }
+  column "notes" {
+    null = true
+    type = text
+  }
+  column "has_receipt" {
+    null    = false
+    type    = boolean
+    default = sql("false")
+  }
+  column "receipt_url" {
+    null = true
+    type = text
+  }
   column "date" {
     null = false
     type = timestamptz
+    default = sql("now()")
+  }
+  column "created_at" {
+    null    = false
+    type    = timestamptz
+    default = sql("now()")
+  }
+  column "updated_at" {
+    null    = false
+    type    = timestamptz
     default = sql("now()")
   }
 

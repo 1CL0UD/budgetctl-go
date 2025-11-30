@@ -1,20 +1,15 @@
 package auth
 
 import (
+	"errors"
 	"os"
 	"strconv"
-	"sync"
 	"time"
 
 	"aidanwoods.dev/go-paseto"
 )
 
-var (
-	once      sync.Once
-	cachedKey paseto.V4SymmetricKey
-	cachedErr error
-	tokenTTL  = 24 * time.Hour
-)
+const tokenTTL = 24 * time.Hour
 
 // GenerateToken creates a signed PASETO v4 token for a user ID.
 func GenerateToken(userID int64) (string, error) {
@@ -60,14 +55,9 @@ func ParseToken(tokenStr string) (int64, error) {
 }
 
 func loadKey() (paseto.V4SymmetricKey, error) {
-	once.Do(func() {
-		if hexKey := os.Getenv("PASETO_KEY"); hexKey != "" {
-			cachedKey, cachedErr = paseto.V4SymmetricKeyFromHex(hexKey)
-			return
-		}
-		// Auto-generate a key if none is provided; replace with env in production.
-		cachedKey = paseto.NewV4SymmetricKey()
-	})
-
-	return cachedKey, cachedErr
+	hexKey := os.Getenv("PASETO_KEY")
+	if hexKey == "" {
+		return paseto.V4SymmetricKey{}, errors.New("PASETO_KEY not set")
+	}
+	return paseto.V4SymmetricKeyFromHex(hexKey)
 }

@@ -66,7 +66,8 @@ func (s *Server) RegisterRoutes() http.Handler {
 	routes.RegisterHealth(api, s.db)
 	routes.RegisterHello(api)
 
-	routes.RegisterAuthRoutes(e, s.db) 
+	routes.RegisterAuthRoutes(e, s.db)
+	routes.RegisterTransactionRoutes(api, s.db)
 
 	return e
 }

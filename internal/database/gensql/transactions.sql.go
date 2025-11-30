@@ -11,11 +11,58 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countTransactions = `-- name: CountTransactions :one
+SELECT COUNT(*) FROM transactions
+WHERE user_id = $1
+  AND ($2::text IS NULL OR description ILIKE '%' || $2 || '%')
+  AND ($3::date IS NULL OR date >= $3::date)
+  AND ($4::date IS NULL OR date <= $4::date)
+  AND ($5::text[] IS NULL OR category = ANY($5::text[]))
+  AND ($6::text IS NULL OR type = $6)
+  AND ($7::numeric IS NULL OR amount >= $7::numeric)
+  AND ($8::numeric IS NULL OR amount <= $8::numeric)
+  AND ($9::text[] IS NULL OR tags && $9::text[])
+`
+
+type CountTransactionsParams struct {
+	UserID  int64
+	Column2 string
+	Column3 pgtype.Date
+	Column4 pgtype.Date
+	Column5 []string
+	Column6 string
+	Column7 pgtype.Numeric
+	Column8 pgtype.Numeric
+	Column9 []string
+}
+
+func (q *Queries) CountTransactions(ctx context.Context, arg CountTransactionsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countTransactions,
+		arg.UserID,
+		arg.Column2,
+		arg.Column3,
+		arg.Column4,
+		arg.Column5,
+		arg.Column6,
+		arg.Column7,
+		arg.Column8,
+		arg.Column9,
+	)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createTransaction = `-- name: CreateTransaction :one
 
-INSERT INTO transactions (user_id, amount, description, category, date)
-VALUES ($1, $2, $3, $4, $5)
-RETURNING id, user_id, amount, description, category, date
+INSERT INTO transactions (
+  user_id, amount, description, category, type, currency, status,
+  account, tags, notes, has_receipt, receipt_url, date
+)
+VALUES (
+  $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13
+)
+RETURNING id, user_id, amount, description, category, date, type, currency, status, account, tags, notes, has_receipt, receipt_url, created_at, updated_at
 `
 
 type CreateTransactionParams struct {
@@ -23,6 +70,14 @@ type CreateTransactionParams struct {
 	Amount      pgtype.Numeric
 	Description string
 	Category    string
+	Type        string
+	Currency    string
+	Status      string
+	Account     string
+	Tags        []string
+	Notes       *string
+	HasReceipt  bool
+	ReceiptUrl  *string
 	Date        pgtype.Timestamptz
 }
 
@@ -33,6 +88,14 @@ func (q *Queries) CreateTransaction(ctx context.Context, arg CreateTransactionPa
 		arg.Amount,
 		arg.Description,
 		arg.Category,
+		arg.Type,
+		arg.Currency,
+		arg.Status,
+		arg.Account,
+		arg.Tags,
+		arg.Notes,
+		arg.HasReceipt,
+		arg.ReceiptUrl,
 		arg.Date,
 	)
 	var i Transaction
@@ -43,14 +106,116 @@ func (q *Queries) CreateTransaction(ctx context.Context, arg CreateTransactionPa
 		&i.Description,
 		&i.Category,
 		&i.Date,
+		&i.Type,
+		&i.Currency,
+		&i.Status,
+		&i.Account,
+		&i.Tags,
+		&i.Notes,
+		&i.HasReceipt,
+		&i.ReceiptUrl,
+		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const deleteTransaction = `-- name: DeleteTransaction :exec
+DELETE FROM transactions
+WHERE id = $1 AND user_id = $2
+`
+
+type DeleteTransactionParams struct {
+	ID     int64
+	UserID int64
+}
+
+func (q *Queries) DeleteTransaction(ctx context.Context, arg DeleteTransactionParams) error {
+	_, err := q.db.Exec(ctx, deleteTransaction, arg.ID, arg.UserID)
+	return err
+}
+
+const getCategories = `-- name: GetCategories :many
+SELECT DISTINCT category as name, category as id
+FROM transactions
+WHERE user_id = $1
+ORDER BY category
+`
+
+type GetCategoriesRow struct {
+	Name string
+	ID   string
+}
+
+func (q *Queries) GetCategories(ctx context.Context, userID int64) ([]GetCategoriesRow, error) {
+	rows, err := q.db.Query(ctx, getCategories, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetCategoriesRow
+	for rows.Next() {
+		var i GetCategoriesRow
+		if err := rows.Scan(&i.Name, &i.ID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getTags = `-- name: GetTags :many
+SELECT DISTINCT unnest(tags) as name, unnest(tags) as id
+FROM transactions
+WHERE user_id = $1 AND array_length(tags, 1) > 0
+ORDER BY name
+`
+
+type GetTagsRow struct {
+	Name interface{}
+	ID   interface{}
+}
+
+func (q *Queries) GetTags(ctx context.Context, userID int64) ([]GetTagsRow, error) {
+	rows, err := q.db.Query(ctx, getTags, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetTagsRow
+	for rows.Next() {
+		var i GetTagsRow
+		if err := rows.Scan(&i.Name, &i.ID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getTotalIncome = `-- name: GetTotalIncome :one
+SELECT COALESCE(SUM(amount), 0)::numeric
+FROM transactions
+WHERE user_id = $1 AND type = 'income'
+`
+
+func (q *Queries) GetTotalIncome(ctx context.Context, userID int64) (pgtype.Numeric, error) {
+	row := q.db.QueryRow(ctx, getTotalIncome, userID)
+	var column_1 pgtype.Numeric
+	err := row.Scan(&column_1)
+	return column_1, err
 }
 
 const getTotalSpending = `-- name: GetTotalSpending :one
 SELECT COALESCE(SUM(amount), 0)::numeric
 FROM transactions
-WHERE user_id = $1
+WHERE user_id = $1 AND type = 'expense'
 `
 
 func (q *Queries) GetTotalSpending(ctx context.Context, userID int64) (pgtype.Numeric, error) {
@@ -60,15 +225,55 @@ func (q *Queries) GetTotalSpending(ctx context.Context, userID int64) (pgtype.Nu
 	return column_1, err
 }
 
-const listTransactions = `-- name: ListTransactions :many
-SELECT id, user_id, amount, description, category, date FROM transactions
-WHERE user_id = $1
-ORDER BY date DESC
-LIMIT 100
+const getTransactionByID = `-- name: GetTransactionByID :one
+SELECT id, user_id, amount, description, category, date, type, currency, status, account, tags, notes, has_receipt, receipt_url, created_at, updated_at FROM transactions
+WHERE id = $1 AND user_id = $2
 `
 
-func (q *Queries) ListTransactions(ctx context.Context, userID int64) ([]Transaction, error) {
-	rows, err := q.db.Query(ctx, listTransactions, userID)
+type GetTransactionByIDParams struct {
+	ID     int64
+	UserID int64
+}
+
+func (q *Queries) GetTransactionByID(ctx context.Context, arg GetTransactionByIDParams) (Transaction, error) {
+	row := q.db.QueryRow(ctx, getTransactionByID, arg.ID, arg.UserID)
+	var i Transaction
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Amount,
+		&i.Description,
+		&i.Category,
+		&i.Date,
+		&i.Type,
+		&i.Currency,
+		&i.Status,
+		&i.Account,
+		&i.Tags,
+		&i.Notes,
+		&i.HasReceipt,
+		&i.ReceiptUrl,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const listTransactions = `-- name: ListTransactions :many
+SELECT id, user_id, amount, description, category, date, type, currency, status, account, tags, notes, has_receipt, receipt_url, created_at, updated_at FROM transactions
+WHERE user_id = $1
+ORDER BY date DESC
+LIMIT $2 OFFSET $3
+`
+
+type ListTransactionsParams struct {
+	UserID int64
+	Limit  int32
+	Offset int32
+}
+
+func (q *Queries) ListTransactions(ctx context.Context, arg ListTransactionsParams) ([]Transaction, error) {
+	rows, err := q.db.Query(ctx, listTransactions, arg.UserID, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
 	}
@@ -83,6 +288,16 @@ func (q *Queries) ListTransactions(ctx context.Context, userID int64) ([]Transac
 			&i.Description,
 			&i.Category,
 			&i.Date,
+			&i.Type,
+			&i.Currency,
+			&i.Status,
+			&i.Account,
+			&i.Tags,
+			&i.Notes,
+			&i.HasReceipt,
+			&i.ReceiptUrl,
+			&i.CreatedAt,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -92,4 +307,155 @@ func (q *Queries) ListTransactions(ctx context.Context, userID int64) ([]Transac
 		return nil, err
 	}
 	return items, nil
+}
+
+const listTransactionsWithFilters = `-- name: ListTransactionsWithFilters :many
+SELECT id, user_id, amount, description, category, date, type, currency, status, account, tags, notes, has_receipt, receipt_url, created_at, updated_at FROM transactions
+WHERE user_id = $1
+  AND ($2::text IS NULL OR description ILIKE '%' || $2 || '%')
+  AND ($3::date IS NULL OR date >= $3::date)
+  AND ($4::date IS NULL OR date <= $4::date)
+  AND ($5::text[] IS NULL OR category = ANY($5::text[]))
+  AND ($6::text IS NULL OR type = $6)
+  AND ($7::numeric IS NULL OR amount >= $7::numeric)
+  AND ($8::numeric IS NULL OR amount <= $8::numeric)
+  AND ($9::text[] IS NULL OR tags && $9::text[])
+ORDER BY date DESC
+LIMIT $10 OFFSET $11
+`
+
+type ListTransactionsWithFiltersParams struct {
+	UserID  int64
+	Column2 string
+	Column3 pgtype.Date
+	Column4 pgtype.Date
+	Column5 []string
+	Column6 string
+	Column7 pgtype.Numeric
+	Column8 pgtype.Numeric
+	Column9 []string
+	Limit   int32
+	Offset  int32
+}
+
+func (q *Queries) ListTransactionsWithFilters(ctx context.Context, arg ListTransactionsWithFiltersParams) ([]Transaction, error) {
+	rows, err := q.db.Query(ctx, listTransactionsWithFilters,
+		arg.UserID,
+		arg.Column2,
+		arg.Column3,
+		arg.Column4,
+		arg.Column5,
+		arg.Column6,
+		arg.Column7,
+		arg.Column8,
+		arg.Column9,
+		arg.Limit,
+		arg.Offset,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Transaction
+	for rows.Next() {
+		var i Transaction
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.Amount,
+			&i.Description,
+			&i.Category,
+			&i.Date,
+			&i.Type,
+			&i.Currency,
+			&i.Status,
+			&i.Account,
+			&i.Tags,
+			&i.Notes,
+			&i.HasReceipt,
+			&i.ReceiptUrl,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const updateTransaction = `-- name: UpdateTransaction :one
+UPDATE transactions
+SET
+  amount = $2,
+  description = $3,
+  category = $4,
+  type = $5,
+  currency = $6,
+  status = $7,
+  account = $8,
+  tags = $9,
+  notes = $10,
+  has_receipt = $11,
+  receipt_url = $12,
+  updated_at = NOW()
+WHERE id = $1 AND user_id = $13
+RETURNING id, user_id, amount, description, category, date, type, currency, status, account, tags, notes, has_receipt, receipt_url, created_at, updated_at
+`
+
+type UpdateTransactionParams struct {
+	ID          int64
+	Amount      pgtype.Numeric
+	Description string
+	Category    string
+	Type        string
+	Currency    string
+	Status      string
+	Account     string
+	Tags        []string
+	Notes       *string
+	HasReceipt  bool
+	ReceiptUrl  *string
+	UserID      int64
+}
+
+func (q *Queries) UpdateTransaction(ctx context.Context, arg UpdateTransactionParams) (Transaction, error) {
+	row := q.db.QueryRow(ctx, updateTransaction,
+		arg.ID,
+		arg.Amount,
+		arg.Description,
+		arg.Category,
+		arg.Type,
+		arg.Currency,
+		arg.Status,
+		arg.Account,
+		arg.Tags,
+		arg.Notes,
+		arg.HasReceipt,
+		arg.ReceiptUrl,
+		arg.UserID,
+	)
+	var i Transaction
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Amount,
+		&i.Description,
+		&i.Category,
+		&i.Date,
+		&i.Type,
+		&i.Currency,
+		&i.Status,
+		&i.Account,
+		&i.Tags,
+		&i.Notes,
+		&i.HasReceipt,
+		&i.ReceiptUrl,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }

@@ -1,0 +1,2 @@
+-- Modify "transactions" table
+ALTER TABLE "public"."transactions" ADD COLUMN "type" text NOT NULL DEFAULT 'expense', ADD COLUMN "currency" text NOT NULL DEFAULT 'USD', ADD COLUMN "status" text NOT NULL DEFAULT 'pending', ADD COLUMN "account" text NOT NULL DEFAULT '', ADD COLUMN "tags" text[] NOT NULL DEFAULT '{}', ADD COLUMN "notes" text NULL, ADD COLUMN "has_receipt" boolean NOT NULL DEFAULT false, ADD COLUMN "receipt_url" text NULL, ADD COLUMN "created_at" timestamptz NOT NULL DEFAULT now(), ADD COLUMN "updated_at" timestamptz NOT NULL DEFAULT now();

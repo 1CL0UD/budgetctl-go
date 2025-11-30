@@ -15,6 +15,16 @@ type Transaction struct {
 	Description string
 	Category    string
 	Date        pgtype.Timestamptz
+	Type        string
+	Currency    string
+	Status      string
+	Account     string
+	Tags        []string
+	Notes       *string
+	HasReceipt  bool
+	ReceiptUrl  *string
+	CreatedAt   pgtype.Timestamptz
+	UpdatedAt   pgtype.Timestamptz
 }
 
 type User struct {

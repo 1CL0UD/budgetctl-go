@@ -1,3 +1,4 @@
-h1:D3ewyJK5MEVMNAQz18e2cXLqOFJQ3Gb/SLbUarv/mxs=
+h1:ugbWCZi49qGECz/E/VwRj9VJu1vY/OIQp8D28J45fiI=
 20251129213954_init_schema.sql h1:WXGgfieP6EvUUa/s8dQ87IheX9WNHQa5nXbcBkDAt8E=
 20251130175349_add_user_profile_fields.sql h1:iMEKUcUyISxLVOmGyN3Gesq6H2zcODFX/6MjjKpH+eY=
+20251130182101_add_transactions_table.sql h1:ELvdrAWNBbAFKaiF/fzGU1m8FGbK73/62Lg5Juhh7KM=

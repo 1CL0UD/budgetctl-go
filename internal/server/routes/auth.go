@@ -1,16 +1,17 @@
 package routes
 
 import (
+	"budgetctl-go/internal/auth"
 	"budgetctl-go/internal/database"
 	"budgetctl-go/internal/database/gensql"
+	"budgetctl-go/internal/server/middleware"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"time"
-
-	"budgetctl-go/internal/auth"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/labstack/echo/v4"
@@ -74,20 +75,25 @@ func completeAuth(c echo.Context, db database.Service) error {
 		return c.String(http.StatusInternalServerError, "Failed to generate token")
 	}
 
+	cookieConfig := cookieSecurityConfig()
+
 	c.SetCookie(&http.Cookie{
 		Name:     "auth_token",
 		Value:    token,
 		Path:     "/",
 		HttpOnly: true,
-		Secure:   false, // TODO: Set true in Prod (HTTPS)
+		Secure:   cookieConfig.secure,
 		Expires:  time.Now().Add(24 * time.Hour),
-		SameSite: http.SameSiteLaxMode,
+		SameSite: cookieConfig.sameSite,
 	})
 
 	return c.Redirect(http.StatusTemporaryRedirect, "http://localhost:5173/")
 }
 
 func RegisterAuthRoutes(e *echo.Echo, db database.Service) {
+	userStore := db.GetQueries()
+	authMiddleware := middleware.AuthMiddleware(userStore)
+
 	// Entry points for starting OAuth (plan calls for /auth/login/google; keep /auth/:provider for compatibility)
 	e.GET("/auth/login/:provider", beginAuth)
 	e.GET("/auth/:provider", beginAuth)
@@ -95,26 +101,27 @@ func RegisterAuthRoutes(e *echo.Echo, db database.Service) {
 		return completeAuth(c, db)
 	})
 	e.POST("/auth/logout", logout)
-	e.GET("/auth/me", getCurrentUser(db))
+	e.GET("/auth/me", getCurrentUser(), authMiddleware)
 }
 
 func logout(c echo.Context) error {
+	cookieConfig := cookieSecurityConfig()
 	// Clear auth cookie
 	c.SetCookie(&http.Cookie{
 		Name:     "auth_token",
 		Value:    "",
 		Path:     "/",
 		HttpOnly: true,
-		Secure:   false, // TODO: Set true in Prod (HTTPS)
+		Secure:   cookieConfig.secure,
 		Expires:  time.Unix(0, 0),
 		MaxAge:   -1,
-		SameSite: http.SameSiteLaxMode,
+		SameSite: cookieConfig.sameSite,
 	})
 
 	return c.NoContent(http.StatusNoContent)
 }
 
-func getCurrentUser(db database.Service) echo.HandlerFunc {
+func getCurrentUser() echo.HandlerFunc {
 	type response struct {
 		ID          int64           `json:"id"`
 		Name        *string         `json:"name"`
@@ -124,34 +131,11 @@ func getCurrentUser(db database.Service) echo.HandlerFunc {
 	}
 
 	return func(c echo.Context) error {
-		cookie, err := c.Cookie("auth_token")
-		if err != nil || cookie.Value == "" {
+		user, ok := middleware.UserFromContext(c)
+		if !ok {
 			return c.JSON(http.StatusUnauthorized, map[string]string{
 				"error":   "unauthorized",
 				"message": "Not authenticated",
-			})
-		}
-
-		userID, err := auth.ParseToken(cookie.Value)
-		if err != nil {
-			return c.JSON(http.StatusUnauthorized, map[string]string{
-				"error":   "invalid_token",
-				"message": "Invalid or expired session token",
-			})
-		}
-
-		ctx := c.Request().Context()
-		user, err := db.GetQueries().GetUserByID(ctx, userID)
-		if err != nil {
-			if errors.Is(err, pgx.ErrNoRows) || errors.Is(err, sql.ErrNoRows) {
-				return c.JSON(http.StatusUnauthorized, map[string]string{
-					"error":   "unauthorized",
-					"message": "User not found",
-				})
-			}
-			return c.JSON(http.StatusInternalServerError, map[string]string{
-				"error":   "database_error",
-				"message": "Failed to load user",
 			})
 		}
 
@@ -176,4 +160,25 @@ func optionalString(s string) *string {
 		return nil
 	}
 	return &s
+}
+
+type cookieConfig struct {
+	secure   bool
+	sameSite http.SameSite
+}
+
+func cookieSecurityConfig() cookieConfig {
+	isProd := os.Getenv("APP_ENV") == "production" || os.Getenv("ENV") == "production"
+
+	cfg := cookieConfig{
+		secure:   isProd,
+		sameSite: http.SameSiteLaxMode,
+	}
+
+	if isProd {
+		// For cross-site redirects (OAuth) choose None+Secure, otherwise stay Lax for local dev.
+		cfg.sameSite = http.SameSiteNoneMode
+	}
+
+	return cfg
 }
