@@ -22,4 +22,7 @@ type User struct {
 	Email        string
 	PasswordHash string
 	CreatedAt    pgtype.Timestamptz
+	Name         *string
+	AvatarUrl    *string
+	Preferences  []byte
 }

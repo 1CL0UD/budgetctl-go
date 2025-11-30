@@ -11,6 +11,19 @@ table "users" {
     null = false
     type = text
   }
+  column "name" {
+    null = true
+    type = text
+  }
+  column "avatar_url" {
+    null = true
+    type = text
+  }
+  column "preferences" {
+    null    = false
+    type    = jsonb
+    default = sql("'{}'::jsonb")
+  }
   column "password_hash" {
     null = false
     type = text
