@@ -5,13 +5,21 @@ DEV_URL=docker://postgres/17/dev
 SCHEMA_FILE=file://internal/database/schema.hcl
 MIGRATION_PATH=internal/database/migrations
 MIGRATION_URL=file://$(MIGRATION_PATH)
+DB_CONTAINER=budgetctl-db
 
 .PHONY: dev diff apply sqlc gen check-env
 
 # --- COMMANDS ---
 
-dev:
-	air
+dev: check-env swagger
+	@echo "🐳 Ensuring Database is up..."
+	@if [ -z "$$(docker ps -q -f name=$(DB_CONTAINER))" ]; then \
+		echo "🐳 Database '$(DB_CONTAINER)' not running. Starting it..."; \
+	else \
+		echo "✅ Database '$(DB_CONTAINER)' is already running."; \
+	fi
+	@echo "🚀 Starting Hot Reload..."
+	@air
 
 check-env:
 ifndef DATABASE_URL

@@ -3,6 +3,7 @@ package server
 import (
 	"fmt"
 	"net/http"
+	"os"
 	"time"
 
 	"budgetctl-go/internal/database"
@@ -10,8 +11,13 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humaecho"
+	"github.com/gorilla/sessions"
+	"github.com/labstack/echo-contrib/session"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
+	"github.com/markbates/goth"
+	"github.com/markbates/goth/gothic"
+	"github.com/markbates/goth/providers/google"
 )
 
 type Server struct {
@@ -26,7 +32,17 @@ func NewServer() *http.Server {
 		db:   database.New(),
 	}
 
-	// Declare Server config
+	store := sessions.NewCookieStore([]byte("secret_key"))
+  gothic.Store = store
+
+	goth.UseProviders(
+        google.New(
+            os.Getenv("GOOGLE_CLIENT_ID"),    
+            os.Getenv("GOOGLE_CLIENT_SECRET"),
+            "http://localhost:8080/auth/google/callback", 
+        ),
+    )
+
 	server := &http.Server{
 		Addr:         fmt.Sprintf(":%d", NewServer.port),
 		Handler:      NewServer.RegisterRoutes(),
@@ -42,12 +58,15 @@ func (s *Server) RegisterRoutes() http.Handler {
 	e := echo.New()
 	e.Use(middleware.Logger())
 	e.Use(middleware.Recover())
+	e.Use(session.Middleware(sessions.NewCookieStore([]byte("secret"))))
 
 	config := huma.DefaultConfig("BudgetCtl API", "1.0.0")
 	api := humaecho.New(e, config)
 
 	routes.RegisterHealth(api, s.db)
 	routes.RegisterHello(api)
+
+	routes.RegisterAuthRoutes(e, s.db) 
 
 	return e
 }
